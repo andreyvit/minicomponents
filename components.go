@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -114,10 +115,10 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 				if attrSep == "=" {
 					templ = trimSpace(templ[m[1]:])
 					if m := attrQuotedValueRe.FindStringSubmatchIndex(templ); m != nil {
-						value = strconv.Quote(templ[m[2]:m[3]])
+						value = rewriteInterpolatedStringAsExpr(templ[m[2]:m[3]])
 						templ = templ[m[1]:]
 					} else if m := attrSingleQuotedValueRe.FindStringSubmatchIndex(templ); m != nil {
-						value = strconv.Quote(templ[m[2]:m[3]])
+						value = rewriteInterpolatedStringAsExpr(templ[m[2]:m[3]])
 						templ = templ[m[1]:]
 					} else if m := attrGoValueRe.FindStringSubmatchIndex(templ); m != nil {
 						value = "(" + templ[m[2]:m[3]] + ")"
@@ -174,7 +175,7 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		}
 
 		if strings.TrimSpace(c.Body) != "" {
-			c.Args = append(c.Args, Arg{"body", strconv.Quote(strings.TrimSpace(c.Body))})
+			c.Args = append(c.Args, Arg{"body", rewriteInterpolatedStringAsExpr(strings.TrimSpace(c.Body))})
 			// wr.WriteString("{{")
 		}
 
@@ -204,6 +205,64 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		}
 	}
 	return wr.String(), retErr
+}
+
+func rewriteInterpolatedStringAsExpr(str string) string {
+	if !strings.Contains(str, "{{") {
+		return strconv.Quote(str)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("(concat")
+
+	for {
+		prefix, remainder, found := strings.Cut(str, "{{")
+		if !found {
+			break
+		}
+
+		remainder, trimmingPrefix := strings.CutPrefix(remainder, "- ")
+
+		if prefix != "" {
+			if trimmingPrefix {
+				prefix = strings.TrimRightFunc(prefix, unicode.IsSpace)
+			}
+			buf.WriteByte(' ')
+			buf.WriteString(strconv.Quote(prefix))
+		}
+
+		expr, suffix, found := strings.Cut(remainder, "}}")
+		if !found {
+			str = remainder
+			break
+		}
+		expr, trimmingSuffix := strings.CutSuffix(expr, "-")
+
+		buf.WriteByte(' ')
+		buf.WriteString(parenthesizeIfNecessary(strings.TrimSpace(expr)))
+
+		if trimmingSuffix {
+			suffix = strings.TrimLeftFunc(suffix, unicode.IsSpace)
+		}
+		str = suffix
+	}
+	if str != "" {
+		buf.WriteByte(' ')
+		buf.WriteString(strconv.Quote(str))
+	}
+
+	buf.WriteString(")")
+	return buf.String()
+}
+
+var safeSimpleExprRe = regexp.MustCompile(`^[.\w]+$`)
+
+func parenthesizeIfNecessary(expr string) string {
+	if safeSimpleExprRe.MatchString(expr) {
+		return expr
+	} else {
+		return "(" + expr + ")"
+	}
 }
 
 func skipSpace(s string) (string, bool) {
