@@ -174,7 +174,7 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		}
 
 		if strings.TrimSpace(c.Body) != "" {
-			c.Args = append(c.Args, Arg{"body", strings.TrimSpace(c.Body)})
+			c.Args = append(c.Args, Arg{"body", strconv.Quote(strings.TrimSpace(c.Body))})
 			// wr.WriteString("{{")
 		}
 

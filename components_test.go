@@ -37,6 +37,8 @@ func TestRewrite(t *testing.T) {
 		{`foo <c-foo abc="42" test /> bar`, `foo {{render_foo ($.Bind nil "abc" "42" "test" true)}} bar`},
 
 		{`foo <c-xxx /> bar`, `foo {{error "unknown component <c-xxx>"}} bar`},
+
+		{`foo <c-test>bar</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" "bar")}} boz`},
 	}
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},
@@ -46,9 +48,9 @@ func TestRewrite(t *testing.T) {
 	for _, tt := range tests {
 		actual, _ := Rewrite(tt.input, "mypage", comps)
 		if actual != tt.expected {
-			t.Errorf("** Rewrite(%q) == %q, expected %q", tt.input, actual, tt.expected)
+			t.Errorf("** Rewrite(%s) returned:\n\t%s\nexpected:\n\t%s", tt.input, actual, tt.expected)
 		} else {
-			t.Logf("✓ Rewrite(%q) == %q", tt.input, actual)
+			t.Logf("✓ Rewrite(%s) == %s", tt.input, actual)
 		}
 	}
 }
