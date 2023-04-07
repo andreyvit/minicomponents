@@ -64,6 +64,7 @@ func TestRewrite(t *testing.T) {
 		{"slot component body with data override and arg", `foo <c-slot-body data="hello" answer={{42}} /> bar`, `foo {{eval $.Args.bodyTemplate ($.Bind "hello" "answer" (42))}} bar`, `foo TEST bar`},
 
 		{"slot component", `foo <c-box first="hello" second="world">“{{.}}”</c-box> bar`, `foo {{template "c-box" ($.Bind . "first" "hello" "second" "world" "bodyTemplate" "mypage___c-box__body__1")}} bar{{define "mypage___c-box__body__1"}}{{with .Data}}“{{.}}”{{end}}{{end}}`, `foo <box>“hello”|“world”</box> bar`},
+		{"two slot component calls", `foo <c-simple>A</c-simple> bar <c-simple>B</c-simple> boz`, `foo {{template "c-simple" ($.Bind . "bodyTemplate" "mypage___c-simple__body__1")}} bar {{template "c-simple" ($.Bind . "bodyTemplate" "mypage___c-simple__body__2")}} boz{{define "mypage___c-simple__body__1"}}{{with .Data}}A{{end}}{{end}}{{define "mypage___c-simple__body__2"}}{{with .Data}}B{{end}}{{end}}`, `foo <simple>A</simple> bar <simple>B</simple> boz`},
 	}
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},
@@ -71,6 +72,7 @@ func TestRewrite(t *testing.T) {
 		"c-foo":     {RenderMethod: RenderMethodFunc, ImplName: "render_foo"},
 		"c-button":  {RenderMethod: RenderMethodTemplate},
 		"c-box":     {RenderMethod: RenderMethodTemplate, HasSlots: true},
+		"c-simple":  {RenderMethod: RenderMethodTemplate, HasSlots: true},
 	}
 	for _, tt := range tests {
 		if tt.name == "" {
@@ -112,6 +114,7 @@ func TestRewrite(t *testing.T) {
 			must(root.New("c-test").Parse(`TEST`))
 			must(root.New("c-another").Parse(`ANOTHER`))
 			must(root.New("c-button").Parse(`<button>{{.Args.body}}</button>`))
+			must(root.New("c-simple").Parse(`<simple>{{eval .Args.bodyTemplate ($.Bind $.Data)}}</simple>`))
 			must(root.New("c-box").Parse(`<box>{{eval .Args.bodyTemplate ($.Bind .Args.first)}}|{{eval .Args.bodyTemplate ($.Bind .Args.second)}}</box>`))
 			// for testing component bodies
 			must(root.New("button___body").Parse(`{{with .Data}}<button>{{.}}</button>{{end}}`))
