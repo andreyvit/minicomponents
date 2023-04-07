@@ -28,11 +28,24 @@ const (
 	RenderMethodNone = RenderMethod(iota)
 	RenderMethodTemplate
 	RenderMethodFunc
+	renderMethodSlot
 )
 
 type ComponentDef struct {
 	RenderMethod RenderMethod
-	FuncName     string
+	ImplName     string
+	HasSlots     bool
+}
+
+func (c *ComponentDef) implName(compName string) string {
+	if c.ImplName != "" {
+		return c.ImplName
+	}
+	if c.RenderMethod == RenderMethodFunc {
+		return strings.ReplaceAll(compName, "-", "_")
+	} else {
+		return compName
+	}
 }
 
 type Component struct {
@@ -70,8 +83,10 @@ func errf(orig, templ string, format string, args ...any) *ParseErr {
 
 func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (string, error) {
 	var wr strings.Builder
+	var trailers strings.Builder
 	var retErr error
 	orig := templ
+	nextSlotTemplateIndex := 1
 	for {
 		// log.Printf("parsing %q", templ)
 		m := startRe.FindStringSubmatchIndex(templ)
@@ -91,7 +106,15 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		}
 		var tagErr *ParseErr
 
-		comp := comps[c.Name]
+		var comp *ComponentDef
+		if slot, ok := strings.CutPrefix(c.Name, "c-slot-"); ok {
+			comp = &ComponentDef{
+				RenderMethod: renderMethodSlot,
+				ImplName:     slot,
+			}
+		} else {
+			comp = comps[c.Name]
+		}
 		if tagErr == nil && comp == nil {
 			tagErr = errf(orig, templ, fmt.Sprintf("unknown component <%s>", c.Name))
 		}
@@ -110,21 +133,26 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 			if m = attrStartRe.FindStringSubmatchIndex(templ); precededBySpace && m != nil {
 				attrName := templ[m[2]:m[3]]
 				attrSep := templ[m[4]:m[5]]
-				var value string
+				var value, rawValue string
+				var valueOK bool = true
 				// log.Printf("attrName=%q attrSep=%q", attrName, attrSep)
 				if attrSep == "=" {
 					templ = trimSpace(templ[m[1]:])
 					if m := attrQuotedValueRe.FindStringSubmatchIndex(templ); m != nil {
-						value = rewriteInterpolatedStringAsExpr(templ[m[2]:m[3]])
+						rawValue = templ[m[2]:m[3]]
+						value, valueOK = rewriteInterpolatedStringAsExpr(rawValue)
 						templ = templ[m[1]:]
 					} else if m := attrSingleQuotedValueRe.FindStringSubmatchIndex(templ); m != nil {
-						value = rewriteInterpolatedStringAsExpr(templ[m[2]:m[3]])
+						rawValue = templ[m[2]:m[3]]
+						value, valueOK = rewriteInterpolatedStringAsExpr(rawValue)
 						templ = templ[m[1]:]
 					} else if m := attrGoValueRe.FindStringSubmatchIndex(templ); m != nil {
-						value = "(" + templ[m[2]:m[3]] + ")"
+						rawValue = templ[m[2]:m[3]]
+						value = "(" + rawValue + ")"
 						templ = templ[m[1]:]
 					} else if m := attrNakedValueRe.FindStringSubmatchIndex(templ); m != nil {
-						value = strconv.Quote(templ[m[0]:m[1]])
+						rawValue = templ[m[0]:m[1]]
+						value = strconv.Quote(rawValue)
 						templ = templ[m[1]:]
 					} else if m := brokenAttrEndRe.FindStringIndex(templ); m != nil {
 						if tagErr == nil {
@@ -138,6 +166,12 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 						}
 						endRe = endBrokenOpenRe
 						break
+					}
+					if !valueOK {
+						// TODO: we could build a template and then eval it
+						if tagErr == nil {
+							tagErr = errf(orig, templ, "cannot represent attr %s value %s as a single call", attrName, rawValue)
+						}
 					}
 				} else {
 					templ = templ[m[4]:]
@@ -174,9 +208,31 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 			}
 		}
 
-		if strings.TrimSpace(c.Body) != "" {
-			c.Args = append(c.Args, Arg{"body", rewriteInterpolatedStringAsExpr(strings.TrimSpace(c.Body))})
-			// wr.WriteString("{{")
+		hasSlots := (comp != nil && comp.HasSlots)
+		var usesSlotTemplate bool
+		var bodyExpr string
+		if hasSlots {
+			usesSlotTemplate = true
+		} else if c.Body != "" {
+			var ok bool
+			bodyExpr, ok = rewriteInterpolatedStringAsExpr(strings.TrimSpace(c.Body))
+			if !ok {
+				usesSlotTemplate = true
+			}
+		}
+
+		var slotTemplateName string
+		if usesSlotTemplate {
+			slotTemplateName = baseName + "___" + c.Name + "__body__" + strconv.Itoa(nextSlotTemplateIndex)
+			nextSlotTemplateIndex++
+			fmt.Fprintf(&trailers, "{{define %q}}%s{{end}}", slotTemplateName, c.Body)
+			if hasSlots {
+				c.Args = append(c.Args, Arg{"bodyTemplate", strconv.Quote(slotTemplateName)})
+			} else {
+				c.Args = append(c.Args, Arg{"body", fmt.Sprintf("(eval %q .)", slotTemplateName)})
+			}
+		} else if c.Body != "" {
+			c.Args = append(c.Args, Arg{"body", bodyExpr})
 		}
 
 		if tagErr != nil {
@@ -187,29 +243,62 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 			wr.WriteString(strconv.Quote(tagErr.Msg))
 			wr.WriteString("}}")
 		} else {
-			if comp.RenderMethod == RenderMethodTemplate {
-				wr.WriteString("{{template ")
-				wr.WriteString(strconv.Quote(c.Name))
+			passData := usesSlotTemplate
+
+			if comp.RenderMethod == renderMethodSlot {
+				var dataExpr string
+				if data, found := lookupArg(c.Args, "data"); found {
+					dataExpr = fmt.Sprintf("($.Bind %s)", data)
+				} else {
+					dataExpr = "($.Bind $.Data)"
+				}
+				fmt.Fprintf(&wr, "{{eval $.Args.%sTemplate %s}}", comp.ImplName, dataExpr)
 			} else {
-				wr.WriteString("{{")
-				wr.WriteString(comp.FuncName)
+				if comp.RenderMethod == RenderMethodTemplate {
+					wr.WriteString("{{template ")
+					wr.WriteString(strconv.Quote(comp.implName(c.Name)))
+				} else {
+					wr.WriteString("{{")
+					wr.WriteString(comp.implName(c.Name))
+				}
+				wr.WriteString(" ($.Bind ")
+				if passData {
+					wr.WriteString(".")
+				} else {
+					wr.WriteString("nil")
+				}
+				for _, arg := range c.Args {
+					wr.WriteString(" ")
+					wr.WriteString(strconv.Quote(arg.Name))
+					wr.WriteString(" ")
+					wr.WriteString(arg.Value)
+				}
+				wr.WriteString(")}}")
 			}
-			wr.WriteString(" ($.Bind nil")
-			for _, arg := range c.Args {
-				wr.WriteString(" ")
-				wr.WriteString(strconv.Quote(arg.Name))
-				wr.WriteString(" ")
-				wr.WriteString(arg.Value)
-			}
-			wr.WriteString(")}}")
 		}
 	}
+	wr.WriteString(trailers.String())
 	return wr.String(), retErr
 }
 
-func rewriteInterpolatedStringAsExpr(str string) string {
+func WrapTemplate(code string, prefix, suffix string) string {
+	var defines string
+	if i := strings.Index(code, "{{define"); i >= 0 {
+		code, defines = code[:i], code[i:]
+	}
+	return prefix + code + suffix + defines
+}
+
+func ScanTemplate(code string) *ComponentDef {
+	return &ComponentDef{
+		RenderMethod: RenderMethodTemplate,
+		HasSlots:     strings.Contains(code, "<c-slot-"),
+	}
+}
+
+func rewriteInterpolatedStringAsExpr(str string) (string, bool) {
 	if !strings.Contains(str, "{{") {
-		return strconv.Quote(str)
+		return strconv.Quote(str), true
 	}
 
 	var buf strings.Builder
@@ -237,9 +326,15 @@ func rewriteInterpolatedStringAsExpr(str string) string {
 			break
 		}
 		expr, trimmingSuffix := strings.CutSuffix(expr, "-")
+		expr = strings.TrimSpace(expr)
 
-		buf.WriteByte(' ')
-		buf.WriteString(parenthesizeIfNecessary(strings.TrimSpace(expr)))
+		if !isComment(expr) {
+			if isUnconcatenatableExpr(expr) {
+				return "", false
+			}
+			buf.WriteByte(' ')
+			buf.WriteString(parenthesizeIfNecessary(expr))
+		}
 
 		if trimmingSuffix {
 			suffix = strings.TrimLeftFunc(suffix, unicode.IsSpace)
@@ -252,7 +347,40 @@ func rewriteInterpolatedStringAsExpr(str string) string {
 	}
 
 	buf.WriteString(")")
-	return buf.String()
+	return buf.String(), true
+}
+
+func lookupArg(args []Arg, name string) (string, bool) {
+	for _, arg := range args {
+		if arg.Name == name {
+			return arg.Value, true
+		}
+	}
+	return "", false
+}
+
+func isComment(expr string) bool {
+	return strings.HasPrefix(expr, "/*")
+}
+
+func isUnconcatenatableExpr(expr string) bool {
+	if strings.Contains(expr, ":=") {
+		return true
+	}
+	firstWord, _, _ := strings.Cut(strings.TrimSpace(expr), " ")
+	return actions[firstWord]
+}
+
+var actions = map[string]bool{
+	"if":       true,
+	"else":     true,
+	"range":    true,
+	"break":    true,
+	"continue": true,
+	"with":     true,
+	"end":      true,
+	"template": true,
+	"block":    true,
 }
 
 var safeSimpleExprRe = regexp.MustCompile(`^[.\w]+$`)
