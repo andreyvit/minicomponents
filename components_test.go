@@ -57,13 +57,13 @@ func TestRewrite(t *testing.T) {
 		{"", `foo <c-test abc="xy{{.test}}z" /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (print "xy" .test "z"))}} bar`, `foo TEST bar`},
 		{"", `foo <c-test abc='xy{{.test}}z' /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (print "xy" .test "z"))}} bar`, `foo TEST bar`},
 
-		{"eval'ed template body for unsuspecting component", `foo <c-button>{{if .Good}}green{{else}}red{{end}}</c-button> bar`, `foo {{template "c-button" ($.Bind . "body" (eval "mypage___c-button__body__1" .))}} bar{{define "mypage___c-button__body__1"}}{{if .Good}}green{{else}}red{{end}}{{end}}`, `foo <button>green</button> bar`},
+		{"eval'ed template body for unsuspecting component", `foo <c-button>{{if .Good}}green{{else}}red{{end}}</c-button> bar`, `foo {{template "c-button" ($.Bind . "body" (eval "mypage___c-button__body__1" ($.Bind .)))}} bar{{define "mypage___c-button__body__1"}}{{with .Data}}{{if .Good}}green{{else}}red{{end}}{{end}}{{end}}`, `foo <button>green</button> bar`},
 
 		{"slot component body", `foo <c-slot-body /> bar <c-slot-another data="hello" /> boz`, `foo {{eval $.Args.bodyTemplate ($.Bind $.Data)}} bar {{eval $.Args.anotherTemplate ($.Bind "hello")}} boz`, `foo TEST bar <button>hello</button> boz`},
 		{"slot component body with extra arg", `foo <c-slot-body answer={{42}} /> bar`, `foo {{eval $.Args.bodyTemplate ($.Bind $.Data "answer" (42))}} bar`, `foo TEST bar`},
 		{"slot component body with data override and arg", `foo <c-slot-body data="hello" answer={{42}} /> bar`, `foo {{eval $.Args.bodyTemplate ($.Bind "hello" "answer" (42))}} bar`, `foo TEST bar`},
 
-		{"slot component", `foo <c-box first="hello" second="world">“{{.}}”</c-box> bar`, `foo {{template "c-box" ($.Bind . "first" "hello" "second" "world" "bodyTemplate" "mypage___c-box__body__1")}} bar{{define "mypage___c-box__body__1"}}“{{.}}”{{end}}`, `foo <box>“hello”|“world”</box> bar`},
+		{"slot component", `foo <c-box first="hello" second="world">“{{.}}”</c-box> bar`, `foo {{template "c-box" ($.Bind . "first" "hello" "second" "world" "bodyTemplate" "mypage___c-box__body__1")}} bar{{define "mypage___c-box__body__1"}}{{with .Data}}“{{.}}”{{end}}{{end}}`, `foo <box>“hello”|“world”</box> bar`},
 	}
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},
@@ -112,7 +112,7 @@ func TestRewrite(t *testing.T) {
 			must(root.New("c-test").Parse(`TEST`))
 			must(root.New("c-another").Parse(`ANOTHER`))
 			must(root.New("c-button").Parse(`<button>{{.Args.body}}</button>`))
-			must(root.New("c-box").Parse(`<box>{{eval .Args.bodyTemplate .Args.first}}|{{eval .Args.bodyTemplate .Args.second}}</box>`))
+			must(root.New("c-box").Parse(`<box>{{eval .Args.bodyTemplate ($.Bind .Args.first)}}|{{eval .Args.bodyTemplate ($.Bind .Args.second)}}</box>`))
 			// for testing component bodies
 			must(root.New("button___body").Parse(`{{with .Data}}<button>{{.}}</button>{{end}}`))
 

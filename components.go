@@ -225,11 +225,11 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		if usesSlotTemplate {
 			slotTemplateName = baseName + "___" + c.Name + "__body__" + strconv.Itoa(nextSlotTemplateIndex)
 			nextSlotTemplateIndex++
-			fmt.Fprintf(&trailers, "{{define %q}}%s{{end}}", slotTemplateName, c.Body)
+			fmt.Fprintf(&trailers, "{{define %q}}{{with .Data}}%s{{end}}{{end}}", slotTemplateName, c.Body)
 			if hasSlots {
 				c.Args = append(c.Args, Arg{"bodyTemplate", strconv.Quote(slotTemplateName)})
 			} else {
-				c.Args = append(c.Args, Arg{"body", fmt.Sprintf("(eval %q .)", slotTemplateName)})
+				c.Args = append(c.Args, Arg{"body", fmt.Sprintf("(eval %q ($.Bind .))", slotTemplateName)})
 			}
 		} else if c.Body != "" {
 			c.Args = append(c.Args, Arg{"body", bodyExpr})
