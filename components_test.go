@@ -40,15 +40,15 @@ func TestRewrite(t *testing.T) {
 
 		{`foo <c-test>bar</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" "bar")}} boz`},
 
-		{`foo <c-test>ba{{.test}}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba" .test "r"))}} boz`},
-		{`foo <c-test>ba{{.test.foo}}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba" .test.foo "r"))}} boz`},
-		{`foo <c-test>ba{{ .test }}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba" .test "r"))}} boz`},
-		{`foo <c-test>ba{{.test | foo}}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba" (.test | foo) "r"))}} boz`},
-		{`foo <c-test>ba {{.test}} r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba " .test " r"))}} boz`},
-		{`foo <c-test>ba {{- .test}} r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba" .test " r"))}} boz`},
-		{`foo <c-test>ba {{- .test -}} r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (concat "ba" .test "r"))}} boz`},
-		{`foo <c-test abc="xy{{.test}}z" /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (concat "xy" .test "z"))}} bar`},
-		{`foo <c-test abc='xy{{.test}}z' /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (concat "xy" .test "z"))}} bar`},
+		{`foo <c-test>ba{{.test}}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba" .test "r"))}} boz`},
+		{`foo <c-test>ba{{.test.foo}}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba" .test.foo "r"))}} boz`},
+		{`foo <c-test>ba{{ .test }}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba" .test "r"))}} boz`},
+		{`foo <c-test>ba{{.test | foo}}r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba" (.test | foo) "r"))}} boz`},
+		{`foo <c-test>ba {{.test}} r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba " .test " r"))}} boz`},
+		{`foo <c-test>ba {{- .test}} r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba" .test " r"))}} boz`},
+		{`foo <c-test>ba {{- .test -}} r</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" (print "ba" .test "r"))}} boz`},
+		{`foo <c-test abc="xy{{.test}}z" /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (print "xy" .test "z"))}} bar`},
+		{`foo <c-test abc='xy{{.test}}z' /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (print "xy" .test "z"))}} bar`},
 	}
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},

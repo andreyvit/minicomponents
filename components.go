@@ -213,7 +213,7 @@ func rewriteInterpolatedStringAsExpr(str string) string {
 	}
 
 	var buf strings.Builder
-	buf.WriteString("(concat")
+	buf.WriteString("(print")
 
 	for {
 		prefix, remainder, found := strings.Cut(str, "{{")
