@@ -243,16 +243,10 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 			wr.WriteString(strconv.Quote(tagErr.Msg))
 			wr.WriteString("}}")
 		} else {
-			passData := usesSlotTemplate
-
 			if comp.RenderMethod == renderMethodSlot {
-				var dataExpr string
-				if data, found := lookupArg(c.Args, "data"); found {
-					dataExpr = fmt.Sprintf("($.Bind %s)", data)
-				} else {
-					dataExpr = "($.Bind $.Data)"
-				}
-				fmt.Fprintf(&wr, "{{eval $.Args.%sTemplate %s}}", comp.ImplName, dataExpr)
+				fmt.Fprintf(&wr, "{{eval $.Args.%sTemplate", comp.ImplName)
+				writeBindArgs(&wr, c.Args, "$.Data")
+				wr.WriteString("}}")
 			} else {
 				if comp.RenderMethod == RenderMethodTemplate {
 					wr.WriteString("{{template ")
@@ -261,24 +255,39 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 					wr.WriteString("{{")
 					wr.WriteString(comp.implName(c.Name))
 				}
-				wr.WriteString(" ($.Bind ")
-				if passData {
-					wr.WriteString(".")
+				var dataExpr string
+				if usesSlotTemplate {
+					dataExpr = "."
 				} else {
-					wr.WriteString("nil")
+					dataExpr = "nil"
 				}
-				for _, arg := range c.Args {
-					wr.WriteString(" ")
-					wr.WriteString(strconv.Quote(arg.Name))
-					wr.WriteString(" ")
-					wr.WriteString(arg.Value)
-				}
-				wr.WriteString(")}}")
+				writeBindArgs(&wr, c.Args, dataExpr)
+				wr.WriteString("}}")
 			}
 		}
 	}
 	wr.WriteString(trailers.String())
 	return wr.String(), retErr
+}
+
+func writeBindArgs(wr *strings.Builder, args []Arg, dataExpr string) {
+	dataArgIdx := findArg(args, "data")
+	if dataArgIdx >= 0 {
+		dataExpr = args[dataArgIdx].Value
+	}
+
+	wr.WriteString(" ($.Bind ")
+	wr.WriteString(dataExpr)
+	for i, arg := range args {
+		if i == dataArgIdx {
+			continue
+		}
+		wr.WriteString(" ")
+		wr.WriteString(strconv.Quote(arg.Name))
+		wr.WriteString(" ")
+		wr.WriteString(arg.Value)
+	}
+	wr.WriteString(")")
 }
 
 func WrapTemplate(code string, prefix, suffix string) string {
@@ -350,13 +359,13 @@ func rewriteInterpolatedStringAsExpr(str string) (string, bool) {
 	return buf.String(), true
 }
 
-func lookupArg(args []Arg, name string) (string, bool) {
-	for _, arg := range args {
+func findArg(args []Arg, name string) int {
+	for i, arg := range args {
 		if arg.Name == name {
-			return arg.Value, true
+			return i
 		}
 	}
-	return "", false
+	return -1
 }
 
 func isComment(expr string) bool {

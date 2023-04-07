@@ -31,6 +31,7 @@ func TestRewrite(t *testing.T) {
 		{"", `foo <c-test abc='xyz uvw' /> bar`, `foo {{template "c-test" ($.Bind nil "abc" "xyz uvw")}} bar`, `foo TEST bar`},
 		{"", `foo <c-test abc={{xyz}} /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (xyz))}} bar`, `foo TEST bar`},
 		{"", `foo <c-test abc={{xyz}} def g=4 jk="uvw" /> bar`, `foo {{template "c-test" ($.Bind nil "abc" (xyz) "def" true "g" "4" "jk" "uvw")}} bar`, `foo TEST bar`},
+		{"", `foo <c-test data={{xyz}} /> bar`, `foo {{template "c-test" ($.Bind (xyz))}} bar`, `foo TEST bar`},
 
 		{"", `foo <c-test> bar`, `foo {{error "missing </c-test>"}} bar`, `foo ERROR bar`},
 		{"", `foo <c-test abc= > bar`, `foo {{error "missing value for attr abc"}} bar`, `foo ERROR bar`},
@@ -58,8 +59,11 @@ func TestRewrite(t *testing.T) {
 
 		{"eval'ed template body for unsuspecting component", `foo <c-button>{{if .Good}}green{{else}}red{{end}}</c-button> bar`, `foo {{template "c-button" ($.Bind . "body" (eval "mypage___c-button__body__1" .))}} bar{{define "mypage___c-button__body__1"}}{{if .Good}}green{{else}}red{{end}}{{end}}`, `foo <button>green</button> bar`},
 
-		{"slot component", `foo <c-box first="hello" second="world">“{{.}}”</c-box> bar`, `foo {{template "c-box" ($.Bind . "first" "hello" "second" "world" "bodyTemplate" "mypage___c-box__body__1")}} bar{{define "mypage___c-box__body__1"}}“{{.}}”{{end}}`, `foo <box>“hello”|“world”</box> bar`},
 		{"slot component body", `foo <c-slot-body /> bar <c-slot-another data="hello" /> boz`, `foo {{eval $.Args.bodyTemplate ($.Bind $.Data)}} bar {{eval $.Args.anotherTemplate ($.Bind "hello")}} boz`, `foo TEST bar <button>hello</button> boz`},
+		{"slot component body with extra arg", `foo <c-slot-body answer={{42}} /> bar`, `foo {{eval $.Args.bodyTemplate ($.Bind $.Data "answer" (42))}} bar`, `foo TEST bar`},
+		{"slot component body with data override and arg", `foo <c-slot-body data="hello" answer={{42}} /> bar`, `foo {{eval $.Args.bodyTemplate ($.Bind "hello" "answer" (42))}} bar`, `foo TEST bar`},
+
+		{"slot component", `foo <c-box first="hello" second="world">“{{.}}”</c-box> bar`, `foo {{template "c-box" ($.Bind . "first" "hello" "second" "world" "bodyTemplate" "mypage___c-box__body__1")}} bar{{define "mypage___c-box__body__1"}}“{{.}}”{{end}}`, `foo <box>“hello”|“world”</box> bar`},
 	}
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},
