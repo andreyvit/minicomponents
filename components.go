@@ -81,9 +81,29 @@ func errf(orig, templ string, format string, args ...any) *ParseErr {
 	}
 }
 
+type rewriter struct {
+	comps    map[string]*ComponentDef
+	trailers strings.Builder
+	err      error
+}
+
 func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (string, error) {
-	var wr strings.Builder
-	var trailers strings.Builder
+	r := rewriter{
+		comps: comps,
+	}
+	var output strings.Builder
+	r.rewrite(&output, templ, baseName)
+	output.WriteString(r.trailers.String())
+	return output.String(), r.err
+}
+
+func (r *rewriter) fail(err error) {
+	if r.err == nil {
+		r.err = err
+	}
+}
+
+func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName string) {
 	var retErr error
 	orig := templ
 	nextSlotTemplateIndex := 1
@@ -91,10 +111,10 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		// log.Printf("parsing %q", templ)
 		m := startRe.FindStringSubmatchIndex(templ)
 		if m == nil {
-			wr.WriteString(templ)
+			output.WriteString(templ)
 			break
 		}
-		wr.WriteString(templ[:m[0]])
+		output.WriteString(templ[:m[0]])
 		name := templ[m[2]:m[3]]
 		// log.Printf("open %q", name)
 
@@ -113,7 +133,7 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 				ImplName:     slot,
 			}
 		} else {
-			comp = comps[c.Name]
+			comp = r.comps[c.Name]
 		}
 		if tagErr == nil && comp == nil {
 			tagErr = errf(orig, templ, fmt.Sprintf("unknown component <%s>", c.Name))
@@ -216,6 +236,7 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		} else if c.Body != "" {
 			var ok bool
 			bodyExpr, ok = rewriteInterpolatedStringAsExpr(strings.TrimSpace(c.Body))
+			// log.Printf("<%s> ok=%v body: %q bodyExpr: %q", c.Name, ok, c.Body, bodyExpr)
 			if !ok {
 				usesSlotTemplate = true
 			}
@@ -225,7 +246,13 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 		if usesSlotTemplate {
 			slotTemplateName = baseName + "___" + c.Name + "__body__" + strconv.Itoa(nextSlotTemplateIndex)
 			nextSlotTemplateIndex++
-			fmt.Fprintf(&trailers, "{{define %q}}{{with .Data}}%s{{end}}{{end}}", slotTemplateName, c.Body)
+
+			var subout strings.Builder
+			fmt.Fprintf(&subout, "{{define %q}}{{with .Data}}", slotTemplateName)
+			r.rewrite(&subout, c.Body, slotTemplateName)
+			subout.WriteString("{{end}}{{end}}")
+			r.trailers.WriteString(subout.String())
+
 			if hasSlots {
 				c.Args = append(c.Args, Arg{"bodyTemplate", strconv.Quote(slotTemplateName)})
 			} else {
@@ -239,21 +266,21 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 			if retErr == nil {
 				retErr = fmt.Errorf("%s: %w", name, tagErr)
 			}
-			wr.WriteString("{{error ")
-			wr.WriteString(strconv.Quote(tagErr.Msg))
-			wr.WriteString("}}")
+			output.WriteString("{{error ")
+			output.WriteString(strconv.Quote(tagErr.Msg))
+			output.WriteString("}}")
 		} else {
 			if comp.RenderMethod == renderMethodSlot {
-				fmt.Fprintf(&wr, "{{eval $.Args.%sTemplate", comp.ImplName)
-				writeBindArgs(&wr, c.Args, "$.Data")
-				wr.WriteString("}}")
+				fmt.Fprintf(output, "{{eval $.Args.%sTemplate", comp.ImplName)
+				writeBindArgs(output, c.Args, "$.Data")
+				output.WriteString("}}")
 			} else {
 				if comp.RenderMethod == RenderMethodTemplate {
-					wr.WriteString("{{template ")
-					wr.WriteString(strconv.Quote(comp.implName(c.Name)))
+					output.WriteString("{{template ")
+					output.WriteString(strconv.Quote(comp.implName(c.Name)))
 				} else {
-					wr.WriteString("{{")
-					wr.WriteString(comp.implName(c.Name))
+					output.WriteString("{{")
+					output.WriteString(comp.implName(c.Name))
 				}
 				var dataExpr string
 				if usesSlotTemplate {
@@ -261,13 +288,11 @@ func Rewrite(templ string, baseName string, comps map[string]*ComponentDef) (str
 				} else {
 					dataExpr = "nil"
 				}
-				writeBindArgs(&wr, c.Args, dataExpr)
-				wr.WriteString("}}")
+				writeBindArgs(output, c.Args, dataExpr)
+				output.WriteString("}}")
 			}
 		}
 	}
-	wr.WriteString(trailers.String())
-	return wr.String(), retErr
 }
 
 func writeBindArgs(wr *strings.Builder, args []Arg, dataExpr string) {
@@ -306,6 +331,9 @@ func ScanTemplate(code string) *ComponentDef {
 }
 
 func rewriteInterpolatedStringAsExpr(str string) (string, bool) {
+	if strings.Contains(str, "<c-") {
+		return "", false
+	}
 	if !strings.Contains(str, "{{") {
 		return strconv.Quote(str), true
 	}

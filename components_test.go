@@ -65,6 +65,8 @@ func TestRewrite(t *testing.T) {
 
 		{"slot component", `foo <c-box first="hello" second="world">“{{.}}”</c-box> bar`, `foo {{template "c-box" ($.Bind . "first" "hello" "second" "world" "bodyTemplate" "mypage___c-box__body__1")}} bar{{define "mypage___c-box__body__1"}}{{with .Data}}“{{.}}”{{end}}{{end}}`, `foo <box>“hello”|“world”</box> bar`},
 		{"two slot component calls", `foo <c-simple>A</c-simple> bar <c-simple>B</c-simple> boz`, `foo {{template "c-simple" ($.Bind . "bodyTemplate" "mypage___c-simple__body__1")}} bar {{template "c-simple" ($.Bind . "bodyTemplate" "mypage___c-simple__body__2")}} boz{{define "mypage___c-simple__body__1"}}{{with .Data}}A{{end}}{{end}}{{define "mypage___c-simple__body__2"}}{{with .Data}}B{{end}}{{end}}`, `foo <simple>A</simple> bar <simple>B</simple> boz`},
+
+		{"component within component", `foo <c-button><c-test/> xxx</c-button> bar`, `foo {{template "c-button" ($.Bind . "body" (eval "mypage___c-button__body__1" ($.Bind .)))}} bar{{define "mypage___c-button__body__1"}}{{with .Data}}{{template "c-test" ($.Bind nil)}} xxx{{end}}{{end}}`, `foo <button>TEST xxx</button> bar`},
 	}
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},
