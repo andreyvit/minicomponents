@@ -15,8 +15,8 @@ var (
 	endBrokenOpenRe = regexp.MustCompile(`/?>`)
 
 	attrStartRe             = regexp.MustCompile(`(?i)^([a-z0-9-]+)([=\s/>])`)
-	attrQuotedValueRe       = regexp.MustCompile(`(?i)^"([^"]+)"`)
-	attrSingleQuotedValueRe = regexp.MustCompile(`(?i)^'([^']+)'`)
+	attrQuotedValueRe       = regexp.MustCompile(`(?i)^"([^"]*)"`)
+	attrSingleQuotedValueRe = regexp.MustCompile(`(?i)^'([^']*)'`)
 	attrNakedValueRe        = regexp.MustCompile(`(?i)^[^\s/<>"']+`)
 	attrGoValueRe           = regexp.MustCompile(`(?i)^\{\{(.+?)\}\}`)
 	brokenAttrEndRe         = regexp.MustCompile(`(?i)(\s|/?>)`)

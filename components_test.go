@@ -20,6 +20,7 @@ func TestRewrite(t *testing.T) {
 
 		{"", `foo <c-test/> bar`, `foo {{template "c-test" ($.Bind nil)}} bar`, `foo TEST bar`},
 		{"", `foo <c-test /> bar`, `foo {{template "c-test" ($.Bind nil)}} bar`, `foo TEST bar`},
+		{"empty attr", `foo <c-test class="" /> bar`, `foo {{template "c-test" ($.Bind nil "class" "")}} bar`, `foo TEST bar`},
 		{"", `foo <c-test></c-test> bar`, `foo {{template "c-test" ($.Bind nil)}} bar`, `foo TEST bar`},
 
 		{"", `foo <c-test abc/> bar`, `foo {{template "c-test" ($.Bind nil "abc" true)}} bar`, `foo TEST bar`},
