@@ -44,6 +44,9 @@ func TestRewrite(t *testing.T) {
 
 		{"", `foo <c-foo abc="42" test /> bar`, `foo {{render_foo ($.Bind nil "abc" "42" "test" true)}} bar`, `foo FOO bar`},
 
+		{"", `start <c-bar /> end`, `start {{template "c-bar" ($.Bind (prep_bar ($.Bind nil)))}} end`, `start <bar first="bar" second="42" third="" /> end`},
+		{"", `start <c-bar first="boz" third="fubar" /> end`, `start {{template "c-bar" ($.Bind (prep_bar ($.Bind nil "first" "boz" "third" "fubar")))}} end`, `start <bar first="boz" second="42" third="fubar" /> end`},
+
 		{"", `foo <c-xxx /> bar`, `foo {{error "unknown component <c-xxx>"}} bar`, `foo ERROR bar`},
 
 		{"", `foo <c-test>bar</c-test> boz`, `foo {{template "c-test" ($.Bind nil "body" "bar")}} boz`, `foo TEST boz`},
@@ -72,7 +75,8 @@ func TestRewrite(t *testing.T) {
 	comps := map[string]*ComponentDef{
 		"c-test":    {RenderMethod: RenderMethodTemplate},
 		"c-another": {RenderMethod: RenderMethodTemplate},
-		"c-foo":     {RenderMethod: RenderMethodFunc, ImplName: "render_foo"},
+		"c-foo":     {RenderMethod: RenderMethodFunc, FuncName: "render_foo"},
+		"c-bar":     {RenderMethod: RenderMethodFuncThenTemplate, FuncName: "prep_bar"},
 		"c-button":  {RenderMethod: RenderMethodTemplate},
 		"c-box":     {RenderMethod: RenderMethodTemplate, HasSlots: true},
 		"c-simple":  {RenderMethod: RenderMethodTemplate, HasSlots: true},
@@ -93,6 +97,15 @@ func TestRewrite(t *testing.T) {
 			root.Funcs(template.FuncMap{
 				"render_foo": func(v any) template.HTML {
 					return "FOO"
+				},
+				"prep_bar": func(rd *renderData) map[string]any {
+					if _, ok := rd.Args["first"]; !ok {
+						rd.Args["first"] = "bar"
+					}
+					if _, ok := rd.Args["second"]; !ok {
+						rd.Args["second"] = 42
+					}
+					return rd.Args
 				},
 				"xyz": func() string {
 					return "zyx"
@@ -121,6 +134,7 @@ func TestRewrite(t *testing.T) {
 			must(root.New("c-box").Parse(`<box>{{eval .Args.bodyTemplate ($.Bind .Args.first)}}|{{eval .Args.bodyTemplate ($.Bind .Args.second)}}</box>`))
 			// for testing component bodies
 			must(root.New("button___body").Parse(`{{with .Data}}<button>{{.}}</button>{{end}}`))
+			must(root.New("c-bar").Parse(`{{with .Data}}<bar first="{{.first}}" second="{{.second}}" third="{{.third}}" />{{end}}`))
 
 			var out strings.Builder
 			err := page.Execute(&out, &renderData{

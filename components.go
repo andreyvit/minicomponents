@@ -28,24 +28,34 @@ const (
 	RenderMethodNone = RenderMethod(iota)
 	RenderMethodTemplate
 	RenderMethodFunc
+	RenderMethodFuncThenTemplate
 	renderMethodSlot
 )
 
 type ComponentDef struct {
 	RenderMethod RenderMethod
-	ImplName     string
+	FuncName     string
+	TemplateName string
+	SlotName     string
 	HasSlots     bool
 }
 
-func (c *ComponentDef) implName(compName string) string {
-	if c.ImplName != "" {
-		return c.ImplName
+func (c *ComponentDef) funcName(compName string) string {
+	if c.FuncName != "" {
+		return c.FuncName
 	}
 	if c.RenderMethod == RenderMethodFunc {
 		return strings.ReplaceAll(compName, "-", "_")
 	} else {
 		return compName
 	}
+}
+
+func (c *ComponentDef) templName(compName string) string {
+	if c.TemplateName != "" {
+		return c.TemplateName
+	}
+	return compName
 }
 
 type Component struct {
@@ -130,7 +140,7 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 		if slot, ok := strings.CutPrefix(c.Name, "c-slot-"); ok {
 			comp = &ComponentDef{
 				RenderMethod: renderMethodSlot,
-				ImplName:     slot,
+				SlotName:     slot,
 			}
 		} else {
 			comp = r.comps[c.Name]
@@ -271,16 +281,24 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 			output.WriteString("}}")
 		} else {
 			if comp.RenderMethod == renderMethodSlot {
-				fmt.Fprintf(output, "{{eval $.Args.%sTemplate", comp.ImplName)
+				fmt.Fprintf(output, "{{eval $.Args.%sTemplate", comp.SlotName)
 				writeBindArgs(output, c.Args, "$.Data")
 				output.WriteString("}}")
 			} else {
-				if comp.RenderMethod == RenderMethodTemplate {
+				switch comp.RenderMethod {
+				case RenderMethodTemplate:
 					output.WriteString("{{template ")
-					output.WriteString(strconv.Quote(comp.implName(c.Name)))
-				} else {
+					output.WriteString(strconv.Quote(comp.templName(c.Name)))
+				case RenderMethodFunc:
 					output.WriteString("{{")
-					output.WriteString(comp.implName(c.Name))
+					output.WriteString(comp.funcName(c.Name))
+				case RenderMethodFuncThenTemplate:
+					output.WriteString("{{template ")
+					output.WriteString(strconv.Quote(comp.templName(c.Name)))
+					output.WriteString(" ($.Bind (")
+					output.WriteString(comp.funcName(c.Name))
+				default:
+					panic(fmt.Errorf("unsupported render method %v", comp.RenderMethod))
 				}
 				var dataExpr string
 				if usesSlotTemplate {
@@ -289,7 +307,14 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 					dataExpr = "nil"
 				}
 				writeBindArgs(output, c.Args, dataExpr)
-				output.WriteString("}}")
+				switch comp.RenderMethod {
+				case RenderMethodTemplate, RenderMethodFunc:
+					output.WriteString("}}")
+				case RenderMethodFuncThenTemplate:
+					output.WriteString("))}}")
+				default:
+					panic(fmt.Errorf("unsupported render method %v", comp.RenderMethod))
+				}
 			}
 		}
 	}
@@ -437,4 +462,24 @@ func skipSpace(s string) (string, bool) {
 
 func trimSpace(s string) string {
 	return strings.TrimLeft(s, whitespace)
+}
+
+func Args(args ...any) map[string]any {
+	n := len(args)
+	if n%2 != 0 {
+		panic(fmt.Errorf("odd number of arguments %d: %v", n, args))
+	}
+	m := make(map[string]any, n/2)
+	for i := 0; i < n; i += 2 {
+		key, value := args[i], args[i+1]
+		if keyStr, ok := key.(string); ok {
+			m[keyStr] = value
+		} else {
+			panic(fmt.Errorf("argument %d must be a string, got %T: %v", i, key, key))
+		}
+	}
+	if len(m) == 0 {
+		m["__dummy"] = true
+	}
+	return m
 }
