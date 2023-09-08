@@ -200,7 +200,7 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 					if !valueOK {
 						// TODO: we could build a template and then eval it
 						if tagErr == nil {
-							tagErr = errf(orig, templ, "cannot represent attr %s value %s as a single call", attrName, rawValue)
+							tagErr = errf(orig, templ, "cannot represent attr %q value %s as a single call", attrName, rawValue)
 						}
 					}
 				} else {
