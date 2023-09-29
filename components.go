@@ -248,6 +248,7 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 			var ok bool
 			bodyExpr, ok = rewriteInterpolatedStringAsExpr(strings.TrimSpace(c.Body))
 			// log.Printf("<%s> ok=%v body: %q bodyExpr: %q", c.Name, ok, c.Body, bodyExpr)
+			ok = false // quick fix for escaping problems
 			if !ok {
 				usesSlotTemplate = true
 			}
