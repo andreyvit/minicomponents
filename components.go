@@ -255,6 +255,7 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 		}
 
 		var slotTemplateName string
+		var slotArgs []Arg
 		if usesSlotTemplate {
 			slotTemplateName = baseName + "___" + c.Name + "__body__" + strconv.Itoa(nextSlotTemplateIndex)
 			nextSlotTemplateIndex++
@@ -266,7 +267,9 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 			r.trailers.WriteString(subout.String())
 
 			if hasSlots {
-				c.Args = append(c.Args, Arg{"bodyTemplate", strconv.Quote(slotTemplateName)})
+				arg := Arg{"bodyTemplate", strconv.Quote(slotTemplateName)}
+				c.Args = append(c.Args, arg)
+				slotArgs = append(slotArgs, arg)
 			} else {
 				c.Args = append(c.Args, Arg{"body", fmt.Sprintf("(eval %q ($.Bind .))", slotTemplateName)})
 			}
@@ -284,7 +287,7 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 		} else {
 			if comp.RenderMethod == renderMethodSlot {
 				fmt.Fprintf(output, "{{eval $.Args.%sTemplate", comp.SlotName)
-				writeBindArgs(output, c.Args, "$.Data")
+				writeBindArgs(output, c.Args, "(or $.Args.callerData $.Data)")
 				output.WriteString("}}")
 			} else {
 				switch comp.RenderMethod {
@@ -313,7 +316,10 @@ func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName strin
 				case RenderMethodTemplate, RenderMethodFunc:
 					output.WriteString("}}")
 				case RenderMethodFuncThenTemplate:
-					output.WriteString("))}}")
+					output.WriteString(")")
+					slotArgs = append(slotArgs, Arg{"callerData", "."})
+					writeBindExtraArgs(output, slotArgs)
+					output.WriteString(")}}")
 				default:
 					panic(fmt.Errorf("unsupported render method %v", comp.RenderMethod))
 				}
@@ -340,6 +346,15 @@ func writeBindArgs(wr *strings.Builder, args []Arg, dataExpr string) {
 		wr.WriteString(arg.Value)
 	}
 	wr.WriteString(")")
+}
+
+func writeBindExtraArgs(wr *strings.Builder, args []Arg) {
+	for _, arg := range args {
+		wr.WriteString(" ")
+		wr.WriteString(strconv.Quote(arg.Name))
+		wr.WriteString(" ")
+		wr.WriteString(arg.Value)
+	}
 }
 
 func WrapTemplate(code string, prefix, suffix string) string {
