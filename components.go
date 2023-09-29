@@ -114,6 +114,7 @@ func (r *rewriter) fail(err error) {
 }
 
 func (r *rewriter) rewrite(output *strings.Builder, templ string, baseName string) {
+	templ = strings.ReplaceAll(templ, "$@", "$.Args.")
 	var retErr error
 	orig := templ
 	nextSlotTemplateIndex := 1
