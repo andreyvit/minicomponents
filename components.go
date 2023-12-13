@@ -483,16 +483,25 @@ func trimSpace(s string) string {
 
 func Args(args ...any) map[string]any {
 	n := len(args)
-	if n%2 != 0 {
-		panic(fmt.Errorf("odd number of arguments %d: %v", n, args))
-	}
 	m := make(map[string]any, n/2)
-	for i := 0; i < n; i += 2 {
-		key, value := args[i], args[i+1]
-		if keyStr, ok := key.(string); ok {
-			m[keyStr] = value
-		} else {
-			panic(fmt.Errorf("argument %d must be a string, got %T: %v", i, key, key))
+	for i := 0; i < n; i++ {
+		switch arg := args[i].(type) {
+		case string:
+			if i+1 >= n {
+				panic(fmt.Errorf("string key %q not followed by value", arg))
+			}
+			m[arg] = args[i+1]
+			i++
+		case map[string]any:
+			for k, v := range arg {
+				m[k] = v
+			}
+		case map[string]string:
+			for k, v := range arg {
+				m[k] = v
+			}
+		default:
+			panic(fmt.Errorf("argument %d must be a string, got %T: %v", i, arg, arg))
 		}
 	}
 	if len(m) == 0 {
